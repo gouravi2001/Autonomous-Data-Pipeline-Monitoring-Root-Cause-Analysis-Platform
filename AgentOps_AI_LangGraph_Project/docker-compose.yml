@@ -1,0 +1,12 @@
+services:
+  agentops:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"  # Local demo only, intentionally not exposed publicly
+    environment:
+      AGENTOPS_DB_PATH: /tmp/agentops.sqlite3
+      AGENTOPS_ENGINE: langgraph
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]

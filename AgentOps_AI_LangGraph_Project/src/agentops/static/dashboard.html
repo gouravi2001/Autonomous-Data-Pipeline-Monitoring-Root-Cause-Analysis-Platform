@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentOps AI · Incident Console</title>
+  <style>
+    :root {font-family:Inter,ui-sans-serif,system-ui,Arial,sans-serif;color:#e8edf7;background:#0b1321;font-size:15px}
+    *{box-sizing:border-box} body{margin:0} main{max-width:1150px;margin:0 auto;padding:30px 24px 60px}
+    header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #263247;padding-bottom:23px}
+    h1{font-size:26px;letter-spacing:-.7px;margin:0} h2{font-size:18px;margin:0 0 16px} p{color:#a8b5c9;line-height:1.6}
+    .mark{color:#87d8c1}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #344258;border-radius:99px;padding:7px 11px;color:#b9c7db;font-size:12px}
+    .grid{display:grid;grid-template-columns:minmax(320px,1.1fr) minmax(320px,.9fr);gap:18px;margin-top:25px}
+    .panel{background:#121e30;border:1px solid #2b3a51;border-radius:17px;padding:22px;min-width:0}
+    label{display:block;color:#aebcd0;font-size:13px;margin:0 0 7px}
+    select,textarea,input{width:100%;background:#0b1423;color:#ecf2f8;border:1px solid #34435c;border-radius:9px;padding:11px;font:inherit}
+    textarea{min-height:95px;resize:vertical} .field{margin:15px 0} button{background:#62cbb2;color:#06241e;border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer}
+    button:hover{background:#80ddc4} button:disabled{opacity:.4;cursor:default}.secondary{background:#273851;color:#e8edf7}.secondary:hover{background:#354a68}
+    .row{display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap}.key{color:#9eafc5;font-size:12px;letter-spacing:.3px}
+    .value{margin:4px 0 12px;overflow-wrap:anywhere}.danger{color:#ffbf8c}.success{color:#7cddba}
+    .tag{background:#353044;color:#f9c1ae;border-radius:6px;padding:5px 9px;font-size:12px}.ev{margin:8px 0;border:1px solid #34425a;border-radius:9px;padding:12px;background:#0d1828}
+    .ev summary{cursor:pointer;color:#c7dbf6;font-weight:600}.ev pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#adbecf;font-size:12px}
+    .small{font-size:12px}.spacer{margin-top:17px}.notice{border-left:3px solid #eec182;padding:11px;background:#26273a;color:#e8cdaa;margin-top:15px}
+    .empty{padding:30px 0;text-align:center;color:#8294ac}.hidden{display:none}.status{padding:6px 10px;border:1px solid #886e48;color:#ffd69b;border-radius:8px;font-size:12px}
+    @media(max-width:830px){.grid{grid-template-columns:1fr}main{padding:20px 14px}}
+  </style>
+</head>
+<body><main>
+  <header><div><h1><span class="mark">◈</span> AgentOps AI</h1><p style="margin:7px 0 0">Data reliability · Agent-assisted incident response</p></div><span class="pill">● Synthetic demo · no production access</span></header>
+  <div class="grid">
+    <section class="panel">
+      <h2>Start investigation</h2><p>Simulate a pipeline incident. The system collects only allowlisted evidence, proposes a diagnosis and stops for review.</p>
+      <div class="field"><label for="pipeline">Pipeline</label><select id="pipeline"><option value="daily_revenue_etl">daily_revenue_etl — schema drift</option><option value="customer_orders_hourly">customer_orders_hourly — freshness lag</option></select></div>
+      <div class="field"><label for="description">Incident description</label><textarea id="description">Revenue dashboard totals dropped unexpectedly and the transformation job failed.</textarea></div>
+      <button id="investigate">Investigate incident</button>
+      <div id="error" class="notice hidden" role="alert"></div>
+      <div class="notice">AI-assisted decisions are not production authorization. This demo never executes a database change, deployment or pipeline rerun.</div>
+    </section>
+    <section class="panel" aria-live="polite">
+      <div class="row"><h2>Incident report</h2><span id="status" class="status hidden"></span></div>
+      <div id="empty" class="empty">Start an investigation to see its diagnosis, evidence and review gate.</div>
+      <div id="report" class="hidden">
+        <div class="key">INCIDENT ID</div><div class="value small" id="incidentId"></div>
+        <div class="key">ROOT CAUSE</div><div class="value" id="cause"></div>
+        <div class="row"><div><div class="key">CONFIDENCE</div><div class="value" id="confidence"></div></div><div><div class="key">SEVERITY</div><div class="value" id="severity"></div></div></div>
+        <div class="key">RECOMMENDED ACTION</div><div class="value success" id="action"></div>
+        <div class="key">TOOLS CONSULTED</div><div class="value small" id="calls"></div>
+        <div class="key spacer">COLLECTED EVIDENCE</div><div id="evidence"></div>
+        <div class="key spacer">HUMAN REVIEW · SIMULATION ONLY</div>
+        <div class="row spacer"><button id="approve" class="secondary">Record approval</button><button id="reject" class="secondary">Reject</button></div>
+        <p id="reviewNote" class="small"></p>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  let activeId = null;
+  const setError = msg => { el('error').textContent = msg; el('error').classList.toggle('hidden', !msg); };
+  async function request(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : `Request failed: ${response.status}`);
+    return data;
+  }
+  function show(report) {
+    activeId = report.id;
+    el('empty').classList.add('hidden');el('report').classList.remove('hidden');
+    el('status').classList.remove('hidden'); el('status').textContent = report.status.replaceAll('_',' ');
+    el('incidentId').textContent = report.id;
+    el('cause').textContent = report.diagnosis.root_cause;
+    el('confidence').textContent = `${Math.round(report.diagnosis.confidence*100)}%`;
+    el('severity').textContent = report.severity.toUpperCase();
+    el('action').textContent = `${report.proposal.action.replaceAll('_',' ')} (approval required)`;
+    el('calls').textContent = report.tool_calls.join('  ·  ') || 'No calls';
+    el('evidence').replaceChildren();
+    for (const ev of report.evidence) {
+      const details = document.createElement('details');details.className='ev';
+      const title = document.createElement('summary');title.textContent=`${ev.id} · ${ev.source}`;
+      const pre = document.createElement('pre');pre.textContent=JSON.stringify(ev.data,null,2);
+      details.append(title,pre);el('evidence').append(details);
+    }
+    const pending = report.status === 'pending_review';
+    el('approve').disabled=!pending;el('reject').disabled=!pending;
+    el('reviewNote').textContent=pending?'Review records a decision only; it cannot execute a fix.':'Decision recorded in local simulation. No fix was executed.';
+  }
+  el('investigate').addEventListener('click',async () => {
+    setError('');el('investigate').disabled=true;
+    try {
+      const report=await request('/incidents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipeline_id:el('pipeline').value,description:el('description').value})});
+      show(report);
+    } catch(err) {setError(err.message)} finally {el('investigate').disabled=false}
+  });
+  async function review(decision) {
+    if (!activeId) return;
+    setError('');
+    try {
+      const r=await request(`/incidents/${encodeURIComponent(activeId)}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reviewer:'demo-engineer',decision,comment:'Local dashboard simulation'})});
+      show(r);
+    } catch(err){setError(err.message)}
+  }
+  el('approve').addEventListener('click',() => review('approve'));
+  el('reject').addEventListener('click',() => review('reject'));
+})();
+</script>
+</body></html>
